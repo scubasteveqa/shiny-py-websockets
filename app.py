@@ -72,7 +72,7 @@ def server(input, output, session):
         """
         
         return ui.div(
-            ui.div(id="websocket-status", "Checking..."),
+            ui.div("Checking...", id="websocket-status"),
             ui.tags.script(check_js),
         )
     
