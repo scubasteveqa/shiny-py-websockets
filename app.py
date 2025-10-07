@@ -106,6 +106,22 @@ def server(input, output, session):
                         if (window.Shiny.shinyapp.$socket) {
                             const socket = window.Shiny.shinyapp.$socket;
                             
+                            // Add debugging information to global scope for DevTools inspection
+                            window.SocketDebugInfo = {
+                                socket: socket,
+                                socketExists: !!socket,
+                                socketSocketExists: !!socket.socket,
+                                socketConstructor: socket.constructor ? socket.constructor.name : null,
+                                socketSocketConstructor: socket.socket ? socket.socket.constructor.name : null,
+                                socketUrl: socket.url || null,
+                                socketSocketUrl: socket.socket ? socket.socket.url : null,
+                                socketReadyState: socket.socket ? socket.socket.readyState : null,
+                                socketTransport: socket.transport || null,
+                                socketSocketTransport: socket.socket ? socket.socket.transport : null,
+                                localStorage: window.localStorage["shiny.whitelist"],
+                                timestamp: new Date().toISOString()
+                            };
+                            
                             // Check if websocket is forced via localStorage
                             const whitelist = window.localStorage["shiny.whitelist"];
                             const isWebsocketForced = whitelist === '["websocket"]';
