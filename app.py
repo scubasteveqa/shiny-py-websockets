@@ -84,34 +84,42 @@ def server(input, output, session):
     def transport_info():
         # JavaScript to detect the current transport mechanism
         transport_js = """
+        // Initialize debug info immediately
+        window.SocketDebugInfo = {
+            initialized: true,
+            timestamp: new Date().toISOString(),
+            localStorage: window.localStorage["shiny.whitelist"] || null,
+            status: 'initializing'
+        };
+
         function detectTransport() {
             const transportDiv = document.getElementById("transport-status");
             if (!transportDiv) return;
 
             // Function to check transport with retries
             function checkTransport(attempts = 0) {
+                // Always update debug info, even during retries
+                window.SocketDebugInfo = {
+                    ...window.SocketDebugInfo,
+                    detectionAttempt: attempts,
+                    shinyExists: !!window.Shiny,
+                    shinyAppExists: !!(window.Shiny && window.Shiny.shinyapp),
+                    shinySocketExists: !!(window.Shiny && window.Shiny.shinyapp && window.Shiny.shinyapp.$socket),
+                    status: 'detecting',
+                    timestamp: new Date().toISOString()
+                };
+
                 if (attempts > 20) {
                     transportDiv.innerHTML = '<div class="alert alert-warning">Could not detect transport (Shiny may still be initializing)</div>';
-                    // Still provide debug info even when detection fails
                     window.SocketDebugInfo = {
+                        ...window.SocketDebugInfo,
                         error: 'Detection failed after 20 attempts',
-                        localStorage: window.localStorage["shiny.whitelist"],
-                        timestamp: new Date().toISOString()
+                        status: 'failed'
                     };
                     return;
                 }
 
                 try {
-                    // Always provide basic debug info
-                    window.SocketDebugInfo = {
-                        detectionAttempt: attempts,
-                        shinyExists: !!window.Shiny,
-                        shinyAppExists: !!(window.Shiny && window.Shiny.shinyapp),
-                        shinySocketExists: !!(window.Shiny && window.Shiny.shinyapp && window.Shiny.shinyapp.$socket),
-                        localStorage: window.localStorage["shiny.whitelist"],
-                        timestamp: new Date().toISOString()
-                    };
-
                     // Check if Shiny object exists and has socket
                     if (window.Shiny && window.Shiny.shinyapp && window.Shiny.shinyapp.config) {
                         const config = window.Shiny.shinyapp.config;
@@ -122,7 +130,7 @@ def server(input, output, session):
                         if (window.Shiny.shinyapp.$socket) {
                             const socket = window.Shiny.shinyapp.$socket;
                             
-                            // Enhanced debugging information
+                            // Enhanced debugging information - always populate
                             window.SocketDebugInfo = {
                                 ...window.SocketDebugInfo,
                                 socket: socket,
@@ -137,7 +145,8 @@ def server(input, output, session):
                                 socketSocketTransport: socket.socket && socket.socket.transport ? socket.socket.transport : null,
                                 socketKeys: Object.keys(socket),
                                 socketSocketKeys: socket.socket ? Object.keys(socket.socket) : null,
-                                isWebsocketForced: window.localStorage["shiny.whitelist"] === '["websocket"]'
+                                isWebsocketForced: window.localStorage["shiny.whitelist"] === '["websocket"]',
+                                status: 'detected'
                             };
                             
                             // Check if websocket is forced via localStorage
@@ -247,6 +256,11 @@ def server(input, output, session):
                         setTimeout(() => checkTransport(attempts + 1), 200);
                     }
                 } catch (error) {
+                    window.SocketDebugInfo = {
+                        ...window.SocketDebugInfo,
+                        error: error.message,
+                        status: 'error'
+                    };
                     setTimeout(() => checkTransport(attempts + 1), 200);
                 }
             }
@@ -254,16 +268,26 @@ def server(input, output, session):
             checkTransport();
         }
 
-        // Run detection after Shiny loads
+        // Run detection immediately
+        detectTransport();
+
+        // Also run detection after various events
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => setTimeout(detectTransport, 500));
         } else {
             setTimeout(detectTransport, 500);
         }
 
-        // Also re-run when Shiny connects
+        // Re-run when Shiny connects
         $(document).on('shiny:connected', function() {
             setTimeout(detectTransport, 100);
+        });
+
+        // Re-run when page becomes visible (in case it was hidden during reload)
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                setTimeout(detectTransport, 500);
+            }
         });
         """
 
