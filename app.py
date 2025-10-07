@@ -159,10 +159,36 @@ def server(input, output, session):
                         if (window.Shiny.shinyapp.$socket) {
                             const socket = window.Shiny.shinyapp.$socket;
                             
-                            // Add debug information
+                            // Add comprehensive debug information
                             debugInfo.push(`Socket object exists: ${!!socket}`);
                             debugInfo.push(`Socket.socket exists: ${!!socket.socket}`);
                             debugInfo.push(`Socket.transport exists: ${!!socket.transport}`);
+                            
+                            // Add more detailed socket inspection
+                            if (socket) {
+                                debugInfo.push(`Socket constructor: ${socket.constructor ? socket.constructor.name : 'undefined'}`);
+                                debugInfo.push(`Socket keys: ${Object.keys(socket).join(', ')}`);
+                                
+                                // Check for SockJS properties
+                                if (socket.protocol) debugInfo.push(`Socket.protocol: ${socket.protocol}`);
+                                if (socket.transport) debugInfo.push(`Socket.transport: ${JSON.stringify(socket.transport)}`);
+                                if (socket._transport) debugInfo.push(`Socket._transport: ${JSON.stringify(socket._transport)}`);
+                                if (socket.readyState !== undefined) debugInfo.push(`Socket.readyState: ${socket.readyState}`);
+                                if (socket.url) debugInfo.push(`Socket.url: ${socket.url}`);
+                                
+                                // Check for nested socket properties
+                                ['_sock', 'sock', '_socket', 'ws', '_ws', '_transport'].forEach(prop => {
+                                    if (socket[prop]) {
+                                        debugInfo.push(`Socket.${prop} exists: ${!!socket[prop]}`);
+                                        if (socket[prop].constructor) {
+                                            debugInfo.push(`Socket.${prop}.constructor: ${socket[prop].constructor.name}`);
+                                        }
+                                        if (socket[prop].url) {
+                                            debugInfo.push(`Socket.${prop}.url: ${socket[prop].url}`);
+                                        }
+                                    }
+                                });
+                            }
                             
                             if (socket.socket) {
                                 debugInfo.push(`Socket.socket.constructor.name: ${socket.socket.constructor ? socket.socket.constructor.name : 'undefined'}`);
@@ -170,59 +196,107 @@ def server(input, output, session):
                                 debugInfo.push(`Socket.socket.url: ${socket.socket.url || 'undefined'}`);
                             }
 
-                            // More comprehensive transport detection
+                            // Enhanced transport detection logic
+                            let transportDetected = false;
+
+                            // Method 1: Check for native WebSocket
                             if (socket.socket && socket.socket.constructor.name === 'WebSocket') {
                                 transportInfo = 'Active Transport: <strong>websocket</strong> (native WebSocket detected)';
                                 alertClass = 'alert-success';
                                 actualTransport = 'websocket';
-                            } else if (socket.transport && socket.transport.name) {
+                                transportDetected = true;
+                            }
+                            
+                            // Method 2: Check socket.transport.name
+                            else if (socket.transport && socket.transport.name) {
                                 const transportName = socket.transport.name;
                                 transportInfo = `Active Transport: <strong>${transportName}</strong> (via socket.transport.name)`;
                                 actualTransport = transportName;
-                                
-                                if (transportName === 'websocket') {
-                                    alertClass = 'alert-success';
-                                } else {
-                                    alertClass = 'alert-warning';
-                                }
-                            } else if (socket.socket && socket.socket.transport) {
+                                alertClass = transportName === 'websocket' ? 'alert-success' : 'alert-warning';
+                                transportDetected = true;
+                            }
+                            
+                            // Method 3: Check socket.socket.transport
+                            else if (socket.socket && socket.socket.transport && socket.socket.transport.name) {
                                 const transportName = socket.socket.transport.name;
                                 transportInfo = `Active Transport: <strong>${transportName}</strong> (via socket.socket.transport.name)`;
                                 actualTransport = transportName;
-                                
-                                if (transportName === 'websocket') {
-                                    alertClass = 'alert-success';
-                                } else {
-                                    alertClass = 'alert-warning';
-                                }
-                            } else if (socket.socket && socket.socket.readyState !== undefined) {
-                                // Check if it's a WebSocket based on URL pattern
-                                if (socket.socket.url && socket.socket.url.includes('websocket')) {
-                                    transportInfo = 'Active Transport: <strong>websocket</strong> (detected via WebSocket API and URL)';
-                                    alertClass = 'alert-success';
-                                    actualTransport = 'websocket';
-                                } else {
-                                    transportInfo = 'Active Transport: <strong>websocket</strong> (detected via WebSocket API)';
+                                alertClass = transportName === 'websocket' ? 'alert-success' : 'alert-warning';
+                                transportDetected = true;
+                            }
+                            
+                            // Method 4: Check for SockJS patterns in URL or properties
+                            else if (socket.url && socket.url.includes('sockjs')) {
+                                // SockJS can use websockets or fallback to polling
+                                if (socket.url.includes('websocket')) {
+                                    transportInfo = 'Active Transport: <strong>websocket</strong> (SockJS WebSocket detected via URL)';
                                     alertClass = 'alert-success';
                                     actualTransport = 'websocket';
-                                }
-                            } else {
-                                // Check for SockJS or other fallback patterns
-                                if (socket.socket && typeof socket.socket.send === 'function') {
-                                    // Likely using some form of polling/XHR
-                                    transportInfo = 'Active Transport: <strong>polling/xhr</strong> (detected via send method without WebSocket)';
+                                } else {
+                                    transportInfo = 'Active Transport: <strong>sockjs-polling</strong> (SockJS polling detected via URL)';
                                     alertClass = 'alert-warning';
                                     actualTransport = 'polling';
-                                } else {
-                                    transportInfo = 'Active Transport: <strong>unknown</strong> (could not determine method)';
-                                    alertClass = 'alert-warning';
-                                    actualTransport = 'unknown';
+                                }
+                                transportDetected = true;
+                            }
+                            
+                            // Method 5: Check nested socket objects for WebSocket
+                            else {
+                                const socketProperties = ['_sock', 'sock', '_socket', 'ws', '_ws'];
+                                for (const prop of socketProperties) {
+                                    if (socket[prop] && socket[prop].constructor && socket[prop].constructor.name === 'WebSocket') {
+                                        transportInfo = `Active Transport: <strong>websocket</strong> (WebSocket found in socket.${prop})`;
+                                        alertClass = 'alert-success';
+                                        actualTransport = 'websocket';
+                                        transportDetected = true;
+                                        break;
+                                    }
                                 }
                             }
                             
-                            // Add connection state info
-                            if (socket.socket && socket.socket.readyState !== undefined) {
-                                const readyState = socket.socket.readyState;
+                            // Method 6: Check for XHR/polling patterns
+                            if (!transportDetected) {
+                                if (socket.send && typeof socket.send === 'function') {
+                                    // Check if it's using polling by looking for XHR patterns
+                                    if (socket.constructor && socket.constructor.name.toLowerCase().includes('sockjs')) {
+                                        transportInfo = 'Active Transport: <strong>sockjs-polling</strong> (SockJS polling detected)';
+                                        alertClass = 'alert-warning';
+                                        actualTransport = 'polling';
+                                    } else {
+                                        transportInfo = 'Active Transport: <strong>http-polling</strong> (HTTP polling detected)';
+                                        alertClass = 'alert-warning';
+                                        actualTransport = 'polling';
+                                    }
+                                    transportDetected = true;
+                                }
+                            }
+                            
+                            // Method 7: Check readyState patterns
+                            if (!transportDetected && socket.readyState !== undefined) {
+                                const readyState = socket.readyState;
+                                const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+                                if (readyState === 1) { // OPEN
+                                    transportInfo = 'Active Transport: <strong>websocket</strong> (detected via readyState=OPEN)';
+                                    alertClass = 'alert-success';
+                                    actualTransport = 'websocket';
+                                } else {
+                                    transportInfo = `Active Transport: <strong>unknown</strong> (readyState: ${states[readyState] || readyState})`;
+                                    alertClass = 'alert-warning';
+                                    actualTransport = 'unknown';
+                                }
+                                transportDetected = true;
+                            }
+                            
+                            // Fallback: Could not determine
+                            if (!transportDetected) {
+                                transportInfo = 'Active Transport: <strong>unknown</strong> (could not determine method - likely polling)';
+                                alertClass = 'alert-warning';
+                                actualTransport = 'unknown';
+                            }
+                            
+                            // Add connection state info if available
+                            if (socket.readyState !== undefined) {
+                                const readyState = socket.readyState;
                                 const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
                                 transportInfo += `<br><small>Connection State: ${states[readyState] || readyState}</small>`;
                             }
