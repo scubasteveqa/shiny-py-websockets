@@ -105,6 +105,10 @@ def server(input, output, session):
                         // Check various ways to determine transport
                         if (window.Shiny.shinyapp.$socket) {
                             const socket = window.Shiny.shinyapp.$socket;
+                            
+                            // Check if websocket is forced via localStorage
+                            const whitelist = window.localStorage["shiny.whitelist"];
+                            const isWebsocketForced = whitelist === '["websocket"]';
 
                             // Method 1: Check for native WebSocket constructor
                             if (socket.socket && socket.socket.constructor && socket.socket.constructor.name === 'WebSocket') {
@@ -133,8 +137,20 @@ def server(input, output, session):
                                 transportInfo = 'Active Transport: <strong>websocket</strong> (SockJS WebSocket mode)';
                                 alertClass = 'alert-success';
                             }
-                            // Method 6: Check readyState for WebSocket API
-                            else if (socket.socket && socket.socket.readyState !== undefined) {
+                            // Method 6: Special case for forced websocket mode
+                            else if (isWebsocketForced && socket.socket && socket.socket.readyState !== undefined) {
+                                // If websocket is forced but we don't detect clear websocket indicators,
+                                // check if it's still working (readyState 1 = OPEN)
+                                if (socket.socket.readyState === 1) {
+                                    transportInfo = 'Active Transport: <strong>websocket</strong> (forced mode - connection active)';
+                                    alertClass = 'alert-success';
+                                } else {
+                                    transportInfo = 'Active Transport: <strong>ERROR</strong> (websocket forced but connection failed)';
+                                    alertClass = 'alert-danger';
+                                }
+                            }
+                            // Method 7: Check readyState for WebSocket API (only if not forced)
+                            else if (!isWebsocketForced && socket.socket && socket.socket.readyState !== undefined) {
                                 // Check if it has WebSocket-like properties
                                 if (socket.socket.url && (socket.socket.url.includes('ws://') || socket.socket.url.includes('wss://'))) {
                                     transportInfo = 'Active Transport: <strong>websocket</strong> (WebSocket API with WS URL)';
@@ -144,14 +160,19 @@ def server(input, output, session):
                                     alertClass = 'alert-success';
                                 }
                             }
-                            // Method 7: Check for specific polling indicators
-                            else if (socket.constructor && socket.constructor.name === 'PromisedConnection') {
+                            // Method 8: Check for specific polling indicators (only if not forced)
+                            else if (!isWebsocketForced && socket.constructor && socket.constructor.name === 'PromisedConnection') {
                                 transportInfo = 'Active Transport: <strong>http-polling</strong> (Shiny HTTP connection)';
                                 alertClass = 'alert-warning';
                             }
-                            // Method 8: Check for XHR/polling patterns
-                            else if (socket.url && (socket.url.includes('xhr') || socket.url.includes('polling'))) {
+                            // Method 9: Check for XHR/polling patterns (only if not forced)
+                            else if (!isWebsocketForced && socket.url && (socket.url.includes('xhr') || socket.url.includes('polling'))) {
                                 transportInfo = 'Active Transport: <strong>xhr-polling</strong> (XHR polling detected)';
+                                alertClass = 'alert-warning';
+                            }
+                            // Method 10: Handle forced websocket failure case
+                            else if (isWebsocketForced) {
+                                transportInfo = 'Active Transport: <strong>websocket-fallback</strong> (websocket forced but may have fallen back)';
                                 alertClass = 'alert-warning';
                             }
                             // Fallback: Unable to determine
