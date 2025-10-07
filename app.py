@@ -56,7 +56,7 @@ def server(input, output, session):
     last_message_time = reactive.value(None)
     connection_status = reactive.value("unknown")
     transport_method = reactive.value("detecting...")
-    
+
     @reactive.effect
     @reactive.event(input.set_websocket)
     def _():
@@ -263,12 +263,12 @@ def server(input, output, session):
 
     @render.ui
     def websocket_activity():
-        # Create a real-time websocket activity monitor
-        monitor_js = """
-        let messageCount = 0;
-        let lastMessageTime = null;
+        # Create a real-time websocket activity monitor that syncs with server-side tracking
+        monitor_js = f"""
+        let messageCount = {websocket_message_count()};
+        let lastMessageTime = {int(last_message_time() * 1000) if last_message_time() else 'null'};
         
-        function updateActivityDisplay() {
+        function updateActivityDisplay() {{
             const activityDiv = document.getElementById("activity-display");
             if (!activityDiv) return;
             
@@ -277,65 +277,126 @@ def server(input, output, session):
             
             activityDiv.innerHTML = `
                 <div class="alert alert-info">
-                    <strong>WebSocket Messages:</strong> ${messageCount}<br>
-                    <strong>Last Activity:</strong> ${timeStr}<br>
-                    <strong>Monitor Active:</strong> ${now.toLocaleTimeString()}
+                    <strong>WebSocket Messages:</strong> ${{messageCount}}<br>
+                    <strong>Last Activity:</strong> ${{timeStr}}<br>
+                    <strong>Monitor Active:</strong> ${{now.toLocaleTimeString()}}
                 </div>
             `;
             
             // Update hidden indicator for tests
             let indicator = document.getElementById("websocket-activity-indicator");
-            if (!indicator) {
+            if (!indicator) {{
                 indicator = document.createElement("div");
                 indicator.id = "websocket-activity-indicator";
                 indicator.style.display = "none";
                 document.body.appendChild(indicator);
-            }
+            }}
             indicator.setAttribute("data-message-count", messageCount.toString());
             indicator.setAttribute("data-last-message", lastMessageTime || "none");
-            indicator.textContent = `messages-${messageCount}`;
-        }
+            indicator.textContent = `messages-${{messageCount}}`;
+        }}
         
-        // Monitor Shiny's websocket traffic
-        function monitorWebSocketActivity() {
-            if (window.Shiny && window.Shiny.shinyapp && window.Shiny.shinyapp.$socket) {
+        // Monitor Shiny's websocket traffic by hooking into the actual socket
+        function monitorWebSocketActivity() {{
+            if (window.Shiny && window.Shiny.shinyapp && window.Shiny.shinyapp.$socket) {{
                 const socket = window.Shiny.shinyapp.$socket;
                 
-                // Intercept send method if available
-                if (socket.socket && typeof socket.socket.send === 'function') {
-                    const originalSend = socket.socket.send;
-                    socket.socket.send = function(...args) {
+                // Hook into Shiny's message sending mechanism
+                if (socket.send && typeof socket.send === 'function') {{
+                    const originalSend = socket.send;
+                    socket.send = function(...args) {{
                         messageCount++;
                         lastMessageTime = Date.now();
                         updateActivityDisplay();
                         return originalSend.apply(this, args);
-                    };
-                }
+                    }};
+                }}
                 
-                // Monitor message events if available
-                if (socket.socket && typeof socket.socket.addEventListener === 'function') {
-                    socket.socket.addEventListener('message', function(event) {
+                // Hook into the underlying socket if available
+                if (socket.socket) {{
+                    if (typeof socket.socket.send === 'function') {{
+                        const originalSocketSend = socket.socket.send;
+                        socket.socket.send = function(...args) {{
+                            messageCount++;
+                            lastMessageTime = Date.now();
+                            updateActivityDisplay();
+                            return originalSocketSend.apply(this, args);
+                        }};
+                    }}
+                    
+                    // Monitor incoming messages
+                    if (typeof socket.socket.addEventListener === 'function') {{
+                        socket.socket.addEventListener('message', function(event) {{
+                            messageCount++;
+                            lastMessageTime = Date.now();
+                            updateActivityDisplay();
+                        }});
+                    }}
+                }}
+                
+                // Hook into Shiny's onMessage if available
+                if (socket.onMessage && typeof socket.onMessage === 'function') {{
+                    const originalOnMessage = socket.onMessage;
+                    socket.onMessage = function(...args) {{
                         messageCount++;
                         lastMessageTime = Date.now();
                         updateActivityDisplay();
-                    });
-                }
-            }
+                        return originalOnMessage.apply(this, args);
+                    }};
+                }}
+            }}
             
             updateActivityDisplay();
-        }
+        }}
+        
+        // Sync with server-side counters periodically
+        function syncWithServer() {{
+            // Get the current server-side values from the rendered outputs
+            const pingResult = document.querySelector('[data-testid="ping_result"]');
+            const stressResult = document.querySelector('[data-testid="stress_result"]');
+            
+            if (pingResult && pingResult.textContent.includes('Total messages:')) {{
+                const match = pingResult.textContent.match(/Total messages: (\\d+)/);
+                if (match) {{
+                    const serverCount = parseInt(match[1]);
+                    if (serverCount > messageCount) {{
+                        messageCount = serverCount;
+                        lastMessageTime = Date.now();
+                        updateActivityDisplay();
+                    }}
+                }}
+            }}
+            
+            if (stressResult && stressResult.textContent.includes('Generated')) {{
+                const match = stressResult.textContent.match(/Generated (\\d+) messages/);
+                if (match) {{
+                    const serverCount = parseInt(match[1]);
+                    if (serverCount > messageCount) {{
+                        messageCount = serverCount;
+                        lastMessageTime = Date.now();
+                        updateActivityDisplay();
+                    }}
+                }}
+            }}
+        }}
         
         // Set up monitoring
-        if (window.Shiny && window.Shiny.shinyapp) {
+        if (window.Shiny && window.Shiny.shinyapp) {{
             monitorWebSocketActivity();
-        } else {
-            $(document).on('shiny:connected', function() {
+        }} else {{
+            $(document).on('shiny:connected', function() {{
                 setTimeout(monitorWebSocketActivity, 100);
-            });
-        }
+            }});
+        }}
         
-        // Update display every 2 seconds
-        setInterval(updateActivityDisplay, 2000);
+        // Update display every 2 seconds and sync with server
+        setInterval(function() {{
+            updateActivityDisplay();
+            syncWithServer();
+        }}, 2000);
+        
+        // Initial sync
+        setTimeout(syncWithServer, 500);
         """
         
         return ui.div(
