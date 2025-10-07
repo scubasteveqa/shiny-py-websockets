@@ -265,138 +265,163 @@ def server(input, output, session):
     def websocket_activity():
         # Create a real-time websocket activity monitor that syncs with server-side tracking
         monitor_js = f"""
-        let messageCount = {websocket_message_count()};
-        let lastMessageTime = {int(last_message_time() * 1000) if last_message_time() else 'null'};
-        
-        function updateActivityDisplay() {{
-            const activityDiv = document.getElementById("activity-display");
-            if (!activityDiv) return;
-            
-            const now = new Date();
-            const timeStr = lastMessageTime ? new Date(lastMessageTime).toLocaleTimeString() : 'None';
-            
-            activityDiv.innerHTML = `
-                <div class="alert alert-info">
-                    <strong>WebSocket Messages:</strong> ${{messageCount}}<br>
-                    <strong>Last Activity:</strong> ${{timeStr}}<br>
-                    <strong>Monitor Active:</strong> ${{now.toLocaleTimeString()}}
-                </div>
-            `;
-            
-            // Update hidden indicator for tests
-            let indicator = document.getElementById("websocket-activity-indicator");
-            if (!indicator) {{
-                indicator = document.createElement("div");
-                indicator.id = "websocket-activity-indicator";
-                indicator.style.display = "none";
-                document.body.appendChild(indicator);
+        (function() {{
+            // Use a namespace to avoid variable conflicts
+            if (!window.WebSocketMonitor) {{
+                window.WebSocketMonitor = {{}};
             }}
-            indicator.setAttribute("data-message-count", messageCount.toString());
-            indicator.setAttribute("data-last-message", lastMessageTime || "none");
-            indicator.textContent = `messages-${{messageCount}}`;
-        }}
-        
-        // Monitor Shiny's websocket traffic by hooking into the actual socket
-        function monitorWebSocketActivity() {{
-            if (window.Shiny && window.Shiny.shinyapp && window.Shiny.shinyapp.$socket) {{
-                const socket = window.Shiny.shinyapp.$socket;
+            
+            // Initialize or update the message count from server
+            window.WebSocketMonitor.messageCount = {websocket_message_count()};
+            window.WebSocketMonitor.lastMessageTime = {int(last_message_time() * 1000) if last_message_time() else 'null'};
+            
+            function updateActivityDisplay() {{
+                const activityDiv = document.getElementById("activity-display");
+                if (!activityDiv) return;
                 
-                // Hook into Shiny's message sending mechanism
-                if (socket.send && typeof socket.send === 'function') {{
-                    const originalSend = socket.send;
-                    socket.send = function(...args) {{
-                        messageCount++;
-                        lastMessageTime = Date.now();
-                        updateActivityDisplay();
-                        return originalSend.apply(this, args);
-                    }};
+                const now = new Date();
+                const timeStr = window.WebSocketMonitor.lastMessageTime ? 
+                    new Date(window.WebSocketMonitor.lastMessageTime).toLocaleTimeString() : 'None';
+                
+                activityDiv.innerHTML = `
+                    <div class="alert alert-info">
+                        <strong>WebSocket Messages:</strong> ${{window.WebSocketMonitor.messageCount}}<br>
+                        <strong>Last Activity:</strong> ${{timeStr}}<br>
+                        <strong>Monitor Active:</strong> ${{now.toLocaleTimeString()}}
+                    </div>
+                `;
+                
+                // Update hidden indicator for tests
+                let indicator = document.getElementById("websocket-activity-indicator");
+                if (!indicator) {{
+                    indicator = document.createElement("div");
+                    indicator.id = "websocket-activity-indicator";
+                    indicator.style.display = "none";
+                    document.body.appendChild(indicator);
                 }}
-                
-                // Hook into the underlying socket if available
-                if (socket.socket) {{
-                    if (typeof socket.socket.send === 'function') {{
-                        const originalSocketSend = socket.socket.send;
-                        socket.socket.send = function(...args) {{
-                            messageCount++;
-                            lastMessageTime = Date.now();
-                            updateActivityDisplay();
-                            return originalSocketSend.apply(this, args);
-                        }};
-                    }}
+                indicator.setAttribute("data-message-count", window.WebSocketMonitor.messageCount.toString());
+                indicator.setAttribute("data-last-message", window.WebSocketMonitor.lastMessageTime || "none");
+                indicator.textContent = `messages-${{window.WebSocketMonitor.messageCount}}`;
+            }}
+            
+            // Monitor Shiny's websocket traffic by hooking into the actual socket
+            function monitorWebSocketActivity() {{
+                if (window.Shiny && window.Shiny.shinyapp && window.Shiny.shinyapp.$socket) {{
+                    const socket = window.Shiny.shinyapp.$socket;
                     
-                    // Monitor incoming messages
-                    if (typeof socket.socket.addEventListener === 'function') {{
-                        socket.socket.addEventListener('message', function(event) {{
-                            messageCount++;
-                            lastMessageTime = Date.now();
-                            updateActivityDisplay();
-                        }});
+                    // Only set up hooks once
+                    if (!window.WebSocketMonitor.hooksSetUp) {{
+                        window.WebSocketMonitor.hooksSetUp = true;
+                        
+                        // Hook into Shiny's message sending mechanism
+                        if (socket.send && typeof socket.send === 'function') {{
+                            const originalSend = socket.send;
+                            socket.send = function(...args) {{
+                                window.WebSocketMonitor.messageCount++;
+                                window.WebSocketMonitor.lastMessageTime = Date.now();
+                                updateActivityDisplay();
+                                return originalSend.apply(this, args);
+                            }};
+                        }}
+                        
+                        // Hook into the underlying socket if available
+                        if (socket.socket) {{
+                            if (typeof socket.socket.send === 'function') {{
+                                const originalSocketSend = socket.socket.send;
+                                socket.socket.send = function(...args) {{
+                                    window.WebSocketMonitor.messageCount++;
+                                    window.WebSocketMonitor.lastMessageTime = Date.now();
+                                    updateActivityDisplay();
+                                    return originalSocketSend.apply(this, args);
+                                }};
+                            }}
+                            
+                            // Monitor incoming messages
+                            if (typeof socket.socket.addEventListener === 'function') {{
+                                socket.socket.addEventListener('message', function(event) {{
+                                    window.WebSocketMonitor.messageCount++;
+                                    window.WebSocketMonitor.lastMessageTime = Date.now();
+                                    updateActivityDisplay();
+                                }});
+                            }}
+                        }}
+                        
+                        // Hook into Shiny's onMessage if available
+                        if (socket.onMessage && typeof socket.onMessage === 'function') {{
+                            const originalOnMessage = socket.onMessage;
+                            socket.onMessage = function(...args) {{
+                                window.WebSocketMonitor.messageCount++;
+                                window.WebSocketMonitor.lastMessageTime = Date.now();
+                                updateActivityDisplay();
+                                return originalOnMessage.apply(this, args);
+                            }};
+                        }}
                     }}
                 }}
                 
-                // Hook into Shiny's onMessage if available
-                if (socket.onMessage && typeof socket.onMessage === 'function') {{
-                    const originalOnMessage = socket.onMessage;
-                    socket.onMessage = function(...args) {{
-                        messageCount++;
-                        lastMessageTime = Date.now();
-                        updateActivityDisplay();
-                        return originalOnMessage.apply(this, args);
-                    }};
-                }}
+                updateActivityDisplay();
             }}
             
-            updateActivityDisplay();
-        }}
-        
-        // Sync with server-side counters periodically
-        function syncWithServer() {{
-            // Get the current server-side values from the rendered outputs
-            const pingResult = document.querySelector('[data-testid="ping_result"]');
-            const stressResult = document.querySelector('[data-testid="stress_result"]');
-            
-            if (pingResult && pingResult.textContent.includes('Total messages:')) {{
-                const match = pingResult.textContent.match(/Total messages: (\\d+)/);
-                if (match) {{
-                    const serverCount = parseInt(match[1]);
-                    if (serverCount > messageCount) {{
-                        messageCount = serverCount;
-                        lastMessageTime = Date.now();
-                        updateActivityDisplay();
+            // Sync with server-side counters periodically
+            function syncWithServer() {{
+                // Get the current server-side values from the rendered outputs
+                const pingResult = document.querySelector('[data-testid="ping_result"]') || 
+                                 Array.from(document.querySelectorAll('*')).find(el => 
+                                   el.textContent && el.textContent.includes('Total messages:'));
+                const stressResult = document.querySelector('[data-testid="stress_result"]') ||
+                                   Array.from(document.querySelectorAll('*')).find(el => 
+                                     el.textContent && el.textContent.includes('Generated') && el.textContent.includes('messages'));
+                
+                if (pingResult && pingResult.textContent.includes('Total messages:')) {{
+                    const match = pingResult.textContent.match(/Total messages: (\\d+)/);
+                    if (match) {{
+                        const serverCount = parseInt(match[1]);
+                        if (serverCount > window.WebSocketMonitor.messageCount) {{
+                            window.WebSocketMonitor.messageCount = serverCount;
+                            window.WebSocketMonitor.lastMessageTime = Date.now();
+                            updateActivityDisplay();
+                        }}
+                    }}
+                }}
+                
+                if (stressResult && stressResult.textContent.includes('Generated')) {{
+                    const match = stressResult.textContent.match(/Generated (\\d+) messages/);
+                    if (match) {{
+                        const serverCount = parseInt(match[1]);
+                        if (serverCount > window.WebSocketMonitor.messageCount) {{
+                            window.WebSocketMonitor.messageCount = serverCount;
+                            window.WebSocketMonitor.lastMessageTime = Date.now();
+                            updateActivityDisplay();
+                        }}
                     }}
                 }}
             }}
             
-            if (stressResult && stressResult.textContent.includes('Generated')) {{
-                const match = stressResult.textContent.match(/Generated (\\d+) messages/);
-                if (match) {{
-                    const serverCount = parseInt(match[1]);
-                    if (serverCount > messageCount) {{
-                        messageCount = serverCount;
-                        lastMessageTime = Date.now();
-                        updateActivityDisplay();
-                    }}
+            // Set up monitoring only once
+            if (!window.WebSocketMonitor.initialized) {{
+                window.WebSocketMonitor.initialized = true;
+                
+                if (window.Shiny && window.Shiny.shinyapp) {{
+                    monitorWebSocketActivity();
+                }} else {{
+                    $(document).on('shiny:connected', function() {{
+                        setTimeout(monitorWebSocketActivity, 100);
+                    }});
                 }}
+                
+                // Update display every 2 seconds and sync with server
+                setInterval(function() {{
+                    updateActivityDisplay();
+                    syncWithServer();
+                }}, 2000);
             }}
-        }}
-        
-        // Set up monitoring
-        if (window.Shiny && window.Shiny.shinyapp) {{
-            monitorWebSocketActivity();
-        }} else {{
-            $(document).on('shiny:connected', function() {{
-                setTimeout(monitorWebSocketActivity, 100);
-            }});
-        }}
-        
-        // Update display every 2 seconds and sync with server
-        setInterval(function() {{
-            updateActivityDisplay();
-            syncWithServer();
-        }}, 2000);
-        
-        // Initial sync
-        setTimeout(syncWithServer, 500);
+            
+            // Initial sync and display update
+            setTimeout(function() {{
+                syncWithServer();
+                updateActivityDisplay();
+            }}, 500);
+        }})();
         """
         
         return ui.div(
