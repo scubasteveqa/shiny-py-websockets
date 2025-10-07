@@ -132,7 +132,7 @@ def server(input, output, session):
 
     @render.ui
     def transport_info():
-        # Enhanced JavaScript to detect and report actual transport usage
+        # Enhanced JavaScript to detect and report actual transport usage with more detail
         transport_js = """
         function detectTransport() {
             const transportDiv = document.getElementById("transport-status");
@@ -153,10 +153,22 @@ def server(input, output, session):
                         let transportInfo = '';
                         let alertClass = 'alert-info';
                         let actualTransport = 'unknown';
+                        let debugInfo = [];
 
                         // Check various ways to determine transport
                         if (window.Shiny.shinyapp.$socket) {
                             const socket = window.Shiny.shinyapp.$socket;
+                            
+                            // Add debug information
+                            debugInfo.push(`Socket object exists: ${!!socket}`);
+                            debugInfo.push(`Socket.socket exists: ${!!socket.socket}`);
+                            debugInfo.push(`Socket.transport exists: ${!!socket.transport}`);
+                            
+                            if (socket.socket) {
+                                debugInfo.push(`Socket.socket.constructor.name: ${socket.socket.constructor ? socket.socket.constructor.name : 'undefined'}`);
+                                debugInfo.push(`Socket.socket.readyState: ${socket.socket.readyState}`);
+                                debugInfo.push(`Socket.socket.url: ${socket.socket.url || 'undefined'}`);
+                            }
 
                             // More comprehensive transport detection
                             if (socket.socket && socket.socket.constructor.name === 'WebSocket') {
@@ -165,7 +177,7 @@ def server(input, output, session):
                                 actualTransport = 'websocket';
                             } else if (socket.transport && socket.transport.name) {
                                 const transportName = socket.transport.name;
-                                transportInfo = `Active Transport: <strong>${transportName}</strong>`;
+                                transportInfo = `Active Transport: <strong>${transportName}</strong> (via socket.transport.name)`;
                                 actualTransport = transportName;
                                 
                                 if (transportName === 'websocket') {
@@ -175,7 +187,7 @@ def server(input, output, session):
                                 }
                             } else if (socket.socket && socket.socket.transport) {
                                 const transportName = socket.socket.transport.name;
-                                transportInfo = `Active Transport: <strong>${transportName}</strong>`;
+                                transportInfo = `Active Transport: <strong>${transportName}</strong> (via socket.socket.transport.name)`;
                                 actualTransport = transportName;
                                 
                                 if (transportName === 'websocket') {
@@ -183,16 +195,28 @@ def server(input, output, session):
                                 } else {
                                     alertClass = 'alert-warning';
                                 }
-                            } else {
-                                // Try to detect based on socket properties
-                                if (socket.socket && socket.socket.readyState !== undefined) {
-                                    transportInfo = 'Active Transport: <strong>websocket</strong> (detected via WebSocket API)';
+                            } else if (socket.socket && socket.socket.readyState !== undefined) {
+                                // Check if it's a WebSocket based on URL pattern
+                                if (socket.socket.url && socket.socket.url.includes('websocket')) {
+                                    transportInfo = 'Active Transport: <strong>websocket</strong> (detected via WebSocket API and URL)';
                                     alertClass = 'alert-success';
                                     actualTransport = 'websocket';
                                 } else {
-                                    transportInfo = 'Active Transport: <strong>polling/xhr</strong> (fallback detected)';
+                                    transportInfo = 'Active Transport: <strong>websocket</strong> (detected via WebSocket API)';
+                                    alertClass = 'alert-success';
+                                    actualTransport = 'websocket';
+                                }
+                            } else {
+                                // Check for SockJS or other fallback patterns
+                                if (socket.socket && typeof socket.socket.send === 'function') {
+                                    // Likely using some form of polling/XHR
+                                    transportInfo = 'Active Transport: <strong>polling/xhr</strong> (detected via send method without WebSocket)';
                                     alertClass = 'alert-warning';
                                     actualTransport = 'polling';
+                                } else {
+                                    transportInfo = 'Active Transport: <strong>unknown</strong> (could not determine method)';
+                                    alertClass = 'alert-warning';
+                                    actualTransport = 'unknown';
                                 }
                             }
                             
@@ -205,18 +229,23 @@ def server(input, output, session):
                             
                         } else {
                             transportInfo = 'Transport: <strong>Shiny socket not yet available</strong>';
+                            debugInfo.push('Shiny socket not available');
                         }
 
                         // Add whitelist info
                         const whitelist = window.localStorage["shiny.whitelist"];
                         let whitelistInfo = '';
                         if (whitelist === '["websocket"]') {
-                            whitelistInfo = '<br><small>Connection forced to websocket-only mode</small>';
+                            whitelistInfo = '<br><small><strong>Connection forced to websocket-only mode</strong></small>';
                         } else {
                             whitelistInfo = '<br><small>Using automatic transport selection</small>';
                         }
+                        
+                        // Add debug info
+                        const debugDetails = debugInfo.length > 0 ? 
+                            `<br><details><summary>Debug Info (click to expand)</summary><small>${debugInfo.join('<br>')}</small></details>` : '';
 
-                        transportDiv.innerHTML = `<div class="alert ${alertClass}">${transportInfo}${whitelistInfo}</div>`;
+                        transportDiv.innerHTML = `<div class="alert ${alertClass}">${transportInfo}${whitelistInfo}${debugDetails}</div>`;
                         updateTransportIndicator(actualTransport);
                     } else {
                         // Shiny not ready yet, retry
@@ -423,7 +452,7 @@ def server(input, output, session):
             }}, 500);
         }})();
         """
-        
+
         return ui.div(
             ui.div("Initializing activity monitor...", id="activity-display"),
             ui.tags.script(monitor_js),
