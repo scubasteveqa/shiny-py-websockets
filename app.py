@@ -65,9 +65,9 @@ def server(input, output, session):
             const statusDiv = document.getElementById("websocket-status");
             if (statusDiv) {
                 if (whitelist === '["websocket"]') {
-                    statusDiv.innerHTML = '<div class="alert alert-success">✓ Websocket whitelist is SET</div>';
+                    statusDiv.innerHTML = '<div class="alert alert-success">Websocket whitelist is enabled and app works correctly</div>';
                 } else {
-                    statusDiv.innerHTML = '<div class="alert alert-info">ℹ Websocket whitelist is NOT set (default behavior)</div>';
+                    statusDiv.innerHTML = '<div class="alert alert-info">Websocket whitelist is NOT set (default behavior)</div>';
                 }
             }
         }
@@ -91,7 +91,7 @@ def server(input, output, session):
             // Function to check transport with retries
             function checkTransport(attempts = 0) {
                 if (attempts > 20) {
-                    transportDiv.innerHTML = '<div class="alert alert-warning">⚠ Could not detect transport (Shiny may still be initializing)</div>';
+                    transportDiv.innerHTML = '<div class="alert alert-warning">Could not detect transport (Shiny may still be initializing)</div>';
                     return;
                 }
                 
@@ -109,7 +109,7 @@ def server(input, output, session):
                             // Check if it's using websockets
                             if (socket.transport && socket.transport.name) {
                                 const transportName = socket.transport.name;
-                                transportInfo = `🔗 Active Transport: <strong>${transportName}</strong>`;
+                                transportInfo = `Active Transport: <strong>${transportName}</strong>`;
                                 
                                 if (transportName === 'websocket') {
                                     alertClass = 'alert-success';
@@ -118,7 +118,7 @@ def server(input, output, session):
                                 }
                             } else if (socket.socket && socket.socket.transport) {
                                 const transportName = socket.socket.transport.name;
-                                transportInfo = `🔗 Active Transport: <strong>${transportName}</strong>`;
+                                transportInfo = `Active Transport: <strong>${transportName}</strong>`;
                                 
                                 if (transportName === 'websocket') {
                                     alertClass = 'alert-success';
@@ -128,24 +128,24 @@ def server(input, output, session):
                             } else {
                                 // Try to detect based on socket properties
                                 if (socket.socket && socket.socket.readyState !== undefined) {
-                                    transportInfo = '🔗 Active Transport: <strong>websocket</strong> (detected via WebSocket API)';
+                                    transportInfo = 'Active Transport: <strong>websocket</strong> (detected via WebSocket API)';
                                     alertClass = 'alert-success';
                                 } else {
-                                    transportInfo = '🔗 Active Transport: <strong>polling/xhr</strong> (fallback detected)';
+                                    transportInfo = 'Active Transport: <strong>polling/xhr</strong> (fallback detected)';
                                     alertClass = 'alert-warning';
                                 }
                             }
                         } else {
-                            transportInfo = '🔗 Transport: <strong>Shiny socket not yet available</strong>';
+                            transportInfo = 'Transport: <strong>Shiny socket not yet available</strong>';
                         }
                         
                         // Add whitelist info
                         const whitelist = window.localStorage["shiny.whitelist"];
                         let whitelistInfo = '';
                         if (whitelist === '["websocket"]') {
-                            whitelistInfo = '<br><small>🎯 Forced to use websocket only</small>';
+                            whitelistInfo = '<br><small>Connection forced to websocket-only mode</small>';
                         } else {
-                            whitelistInfo = '<br><small>🔄 Using automatic transport selection</small>';
+                            whitelistInfo = '<br><small>Using automatic transport selection</small>';
                         }
                         
                         transportDiv.innerHTML = `<div class="alert ${alertClass}">${transportInfo}${whitelistInfo}</div>`;
